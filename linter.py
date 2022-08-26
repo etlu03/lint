@@ -12,9 +12,6 @@ class Exception(named_tuple):
   msg: str
   expl: str
 
-  def unpack(self):
-    return self.line, self.txt, self.msg, self.expl
-
 class Rule(ast.NodeVisitor):
   def __init__(self):
     self.exceptions = set()
@@ -22,9 +19,10 @@ class Rule(ast.NodeVisitor):
 class Linter:
   def __init__(self):
     self.rules = set()
+    self.internal = Rule()
   
   @staticmethod
-  def print_exception(rule, file_name):
+  def print_exception(file_name, rule=None):
     for line, txt, msg, expl in rule.exceptions:
       print('******************************')
       if(file_name): print('  File:     %s' % file_name)
@@ -33,16 +31,6 @@ class Linter:
       if      (msg): print('  Message:  %s' % msg)
       if     (expl): print('  Hint:     %s' % expl)
 
-  @staticmethod
-  def internal_print(exception, file_name):
-    line, txt, msg, expl = exception.unpack()
-    print('******************************')
-    if(file_name): print('  File:     %s' % file_name)
-    if     (line): print('  Line:     %d' % line)
-    if      (txt): print('  Code:     %d' % txt)
-    if      (msg): print('  Message:  %s' % msg)
-    if     (expl): print('  Hint:     %s' % expl)
-  
   def lint_version(self, file_name):
     major, minor = sys.version_info[:2]
     if(major < 3):
@@ -51,28 +39,29 @@ class Linter:
                     txt='Consider upgrading to Python 3.'
       )
 
-      self.internal_print(exception, file_name)
+      self.internal.exceptions.add(exception)
+
     if(minor < 9):
       exception = Exception(
                     msg='Parts of this linter may not work without a modern Python',
                     txt='Consider upgrading to Python 3.9.'
       )
 
-      self.internal_print(exception, file_name)
+      self.internal.exceptions.add(exception)
 
   def lint_lines(self, file_name):
     with open(file_name, mode='rt', encoding='utf-8') as f:
       no = 1
       for line in f.readlines():
-        if(80 < len(line)):
+        if(79 < len(line)):
           exception = Exception(
                         line=no,
-                        txt=line[:78] + '...',
+                        txt=line[:60].strip() + '...',
                         msg='Line width exceeds 80 characters',
                         expl='You may not have a line of code longer than 80 characters.'
           )
 
-          self.internal_print(exception, file_name)
+          self.internal.exceptions.add(exception)
 
         no += 1
 
@@ -82,6 +71,8 @@ class Linter:
     self.lint_version(file_name)
     self.lint_lines(file_name)
 
+    self.rules.add(self.internal)    
+
     with open(source_path) as source_file:
       source_code = source_file.read()
     
@@ -89,7 +80,7 @@ class Linter:
     
     for rule in self.rules:
       rule.visit(tree)
-      self.print_exception(rule, file_name)
+      self.print_exception(file_name, rule=rule)
 
 class Sets(Rule):
   def visit_Set(self, node):
@@ -123,7 +114,7 @@ class Imports(Rule):
     if self.index < node.lineno:
       if 3 < (node.lineno - self.index):
         exception = Exception(
-                      line=node.lineno,
+                      line=None,
                       txt=None,
                       msg='Import statements are spread out too much',
                       expl='Declare imports at the top of every file'
@@ -204,7 +195,17 @@ class Naming(Rule):
   def visit_FunctionDef(self, node):
     name = node.name
     self.lint_args(node)
-    if len(name) < 2 or re.search(self.FUNC_STYLE, name):
+    if len(name) == 1:
+      exception = Exception(
+                    line=node.lineno,
+                    txt=f'{name}()',
+                    msg='Function name must be at least two characters long',
+                    expl='Review PEP8 style for function definition'
+      )
+      
+      self.exceptions.add(exception)
+
+    if re.search(self.FUNC_STYLE, name):
       exception = Exception(
                     line=node.lineno,
                     txt=f'{name}()',
@@ -247,6 +248,22 @@ class Naming(Rule):
 
     super().generic_visit(node)
   
+class Conditionals(Rule):
+  def visit_If(self, node):
+    operators = node.test.ops
+
+    for op in operators:
+      if isinstance(op, ast.Gt) or isinstance(op, ast.GtE):
+        exception = Exception(
+                          line=node.lineno,
+                          text='',
+                          msg='Non-reader-friendly conditional expression',
+                          expl='Avoid using \'>\' and \'>=\''
+        )
+
+        self.exceptions.add(exception)
+        break
+
 class VariableScopeUsage(Rule):
   def __init__(self):
     self.unused = collections.Counter()
@@ -302,7 +319,7 @@ if __name__ == '__main__':
   source_path = sys.argv[1]
 
   linter = Linter()
-  linter.rules.add(Imports())
-  
+  linter.rules.add(Conditionals())
+
   print('Linting...')
   linter.run(source_path)
