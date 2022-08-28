@@ -6,7 +6,7 @@ import collections
 
 from typing import NamedTuple as named_tuple
 
-def define(op):
+def convert(op):
   if isinstance(op, ast.Gt):
     return '>'
   if isinstance(op, ast.GtE):
@@ -17,6 +17,13 @@ def define(op):
     return '<='
   if isinstance(op, ast.Eq):
     return '=='
+  if isinstance(op, ast.And):
+    return 'and'
+  if isinstance(op, ast.Or):
+    return 'or'
+
+def unpack(compare):
+  return compare.left.id, compare.ops[0], compare.comparators[0].id
 
 class Exception(named_tuple):
   line: int
@@ -262,21 +269,34 @@ class Naming(Rule):
   
 class Conditionals(Rule):
   def visit_If(self, node):
-    operators = node.test.ops
-    for op in operators:
-      if isinstance(op, ast.Gt) or isinstance(op, ast.GtE):
-        left = node.test.left.id
-        right = node.test.comparators[0].id
-        exception = Exception(
-                          line=node.lineno,
-                          txt=f'{left} {define(op)} {right}',
-                          msg='Non-reader-friendly conditional expression',
-                          expl='Avoid using \'>\' and \'>=\''
-        )
-
-        self.exceptions.add(exception)
-        break
-
+    try:
+      operators = node.test.ops
+      if len(operators) == 1:
+        op = operators[0]
+        if isinstance(op, ast.Gt) or isinstance(op, ast.GtE):
+          left = node.test.left.id
+          right = node.test.comparators[0].id
+          exception = Exception(
+                            line=node.lineno,
+                            txt=f'{left} {convert(op)} {right}',
+                            msg='Non-reader-friendly conditional expression',
+                            expl='Avoid using \'>\' and \'>=\''
+          )
+          self.exceptions.add(exception)
+    except:
+      #conjunction = node.test.op
+      expression = node.test.values
+      for exp in expression:
+        left, op, right = unpack(exp)
+        if isinstance(op, ast.Gt) or isinstance(op, ast.GtE):
+          exception = Exception(
+                            line=node.lineno,
+                            txt=f'{left} {convert(op)} {right}',
+                            msg='Non-reader-friendly conditional expression',
+                            expl='Avoid using \'>\' and \'>=\''
+          )
+          self.exceptions.add(exception)
+            
 class VariableScopeUsage(Rule):
   def __init__(self):
     self.unused = collections.Counter()
