@@ -3,30 +3,10 @@ import os
 import sys
 import re
 import collections
-import string
+import f
+
 
 from typing import NamedTuple as named_tuple
-
-def extract(elts, res=[]):
-  for elem in elts:
-    if isinstance(elem, ast.Tuple):
-      res.append('(')
-      extract(elem.elts, res)
-      res.append(')')
-    elif isinstance(elem, ast.Constant):
-      res.append(str(elem.value))
-
-def delimit(res):
-  delimited = ['{']
-  for i in range(0, len(res) - 1):
-    if (res[i] in string.digits and res[i + 1] in string.digits) \
-        or res[i] == ')':
-      delimited.append(str(res[i]) + ', ')
-    else:
-      delimited.append(str(res[i]))
-  delimited.append(res[-1])
-  delimited.append('}')
-  return delimited
 
 class Exception(named_tuple):
   line: int
@@ -107,8 +87,8 @@ class Linter:
 class Sets(Rule):
   def visit_Set(self, node):
     res = list()
-    extract(node.elts, res)
-    result = ''.join(res); final = ''.join(delimit(result))
+    f.extract(node.elts, res)
+    result = ''.join(res); final = ''.join(f.delimit(result))
     if len(node.elts) != len(ast.literal_eval(final)):
       exception = Exception(
                     line=node.lineno,
