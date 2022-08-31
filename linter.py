@@ -22,9 +22,6 @@ def convert(op):
   if isinstance(op, ast.Or):
     return 'or'
 
-def unpack(compare):
-  return compare.left.id, compare.ops[0], compare.comparators[0].id
-
 class Exception(named_tuple):
   line: int
   txt: str
@@ -266,37 +263,7 @@ class Naming(Rule):
         self.exceptions.add(exception)
 
     super().generic_visit(node)
-  
-class Conditionals(Rule):
-  def visit_If(self, node):
-    try:
-      operators = node.test.ops
-      if len(operators) == 1:
-        op = operators[0]
-        if isinstance(op, ast.Gt) or isinstance(op, ast.GtE):
-          left = node.test.left.id
-          right = node.test.comparators[0].id
-          exception = Exception(
-                            line=node.lineno,
-                            txt=f'{left} {convert(op)} {right}',
-                            msg='Non-reader-friendly conditional expression',
-                            expl='Avoid using \'>\' and \'>=\''
-          )
-          self.exceptions.add(exception)
-    except:
-      #conjunction = node.test.op
-      expression = node.test.values
-      for exp in expression:
-        left, op, right = unpack(exp)
-        if isinstance(op, ast.Gt) or isinstance(op, ast.GtE):
-          exception = Exception(
-                            line=node.lineno,
-                            txt=f'{left} {convert(op)} {right}',
-                            msg='Non-reader-friendly conditional expression',
-                            expl='Avoid using \'>\' and \'>=\''
-          )
-          self.exceptions.add(exception)
-            
+
 class VariableScopeUsage(Rule):
   def __init__(self):
     self.unused = collections.Counter()
@@ -352,7 +319,6 @@ if __name__ == '__main__':
   source_path = sys.argv[1]
 
   linter = Linter()
-  linter.rules.add(Conditionals())
 
   print('Linting...')
   linter.run(source_path)
