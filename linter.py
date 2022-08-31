@@ -3,24 +3,30 @@ import os
 import sys
 import re
 import collections
+import string
 
 from typing import NamedTuple as named_tuple
 
-def convert(op):
-  if isinstance(op, ast.Gt):
-    return '>'
-  if isinstance(op, ast.GtE):
-    return '>='
-  if isinstance(op, ast.Lt):
-    return '<'
-  if isinstance(op, ast.LtE):
-    return '<='
-  if isinstance(op, ast.Eq):
-    return '=='
-  if isinstance(op, ast.And):
-    return 'and'
-  if isinstance(op, ast.Or):
-    return 'or'
+def extract(elts, res=[]):
+  for elem in elts:
+    if isinstance(elem, ast.Tuple):
+      res.append('(')
+      extract(elem.elts, res)
+      res.append(')')
+    elif isinstance(elem, ast.Constant):
+      res.append(str(elem.value))
+
+def delimit(res):
+  delimited = ['{']
+  for i in range(0, len(res) - 1):
+    if (res[i] in string.digits and res[i + 1] in string.digits) \
+        or res[i] == ')':
+      delimited.append(str(res[i]) + ', ')
+    else:
+      delimited.append(str(res[i]))
+  delimited.append(res[-1])
+  delimited.append('}')
+  return delimited
 
 class Exception(named_tuple):
   line: int
@@ -34,7 +40,7 @@ class Rule(ast.NodeVisitor):
 
 class Linter:
   def __init__(self):
-    self.rules = set()
+    self.rules = [Sets()]
     self.internal = Rule()
   
   @staticmethod
@@ -87,7 +93,7 @@ class Linter:
     self.lint_version(file_name)
     self.lint_lines(file_name)
 
-    self.rules.add(self.internal)    
+    self.rules.append(self.internal)    
 
     with open(source_path) as source_file:
       source_code = source_file.read()
@@ -100,23 +106,17 @@ class Linter:
 
 class Sets(Rule):
   def visit_Set(self, node):
-    seen_values = set()
-    for elem in node.elts:
-      if not isinstance(elem, ast.Constant):
-        continue
-
-      val = elem.value
-      if val in seen_values:
-        exception = Exception(
-                      line=elem.lineno,
-                      txt='{name!r}',
-                      msg='Set contains duplicate elements',
-                      expl='Set may not explicitly be defined with duplicate elements'
-        )
-        self.exceptions.add(exception)
-        break
-      else:
-        seen_values.add(val)
+    res = list()
+    extract(node.elts, res)
+    result = ''.join(res); final = ''.join(delimit(result))
+    if len(node.elts) != len(ast.literal_eval(final)):
+      exception = Exception(
+                    line=node.lineno,
+                    txt=f'{final}',
+                    msg='Set contains duplicate elements',
+                    expl='Set may not explicitly be defined with duplicate elements'
+      )
+      self.exceptions.add(exception)
 
 class Imports(Rule):
   def __init__(self):
